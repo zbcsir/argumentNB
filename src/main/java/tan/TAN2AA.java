@@ -123,14 +123,10 @@ import weka.core.Capabilities.Capability;
  */
 
 /**
- * 21 August 2017, Zhang Bencai: All classifiers extends AbstractClassifier.java, and
- * Classifier.java implements the following five interfaces: (1) Cloneable, (2)
- * Serializable, (3) OptionHandler, (4) CapabilitiesHandler, (5)
- * RevisionHandler.
- * 
+ * 21 August 2017, Zhang Bencai: All classifiers extends AbstractClassifier.java
+ * Version 1.0
  */
-public class TAN2AA extends AbstractClassifier implements OptionHandler,
-  WeightedInstancesHandler, UpdateableClassifier, TechnicalInformationHandler {
+public class TAN2AA extends AbstractClassifier {
 
   /** for serialization */
   private static final long serialVersionUID = -2224762474573467803L;
@@ -189,12 +185,6 @@ public class TAN2AA extends AbstractClassifier implements OptionHandler,
    * security, but it can be used for weighting.
    */
 
-  /** Count for P(ai, aj). Used in M-estimation */
-  private int[][] AandB;
-
-  /** The Smoothing parameter for M-estimation */
-  private final double SMOOTHING = 5.0;
-
   /** The matrix of conditional mutual information */
   private double[][] CMI;
 
@@ -206,10 +196,6 @@ public class TAN2AA extends AbstractClassifier implements OptionHandler,
 
   /** the number of instance of each class value */
   private int[] classins;
-  
-  /**The estimate mode. 0 represent Laplace Estimation. 
-   * 1 represent M-estimation*/
-  private int estimateMode = 0;
 
   /**
    * Returns a string describing this classifier
@@ -485,14 +471,6 @@ public class TAN2AA extends AbstractClassifier implements OptionHandler,
 	  tree[m_Root] = -1 ;
 	  return tree;
   }
-  
-  private double mEstimate(int x) {
-	double theat = 0 ;
-	double alfa = m_NumInstances * (m_Priors[x])/
-			(m_NumInstances*m_Priors[x] + SMOOTHING);
-	return theat ;
-	
-  }
 
   /**
    * Calculates the class membership probabilities for the given test instance.
@@ -503,61 +481,81 @@ public class TAN2AA extends AbstractClassifier implements OptionHandler,
    * @exception Exception
    *              if there is a problem generating the prediction
    */
-  public double[] distributionForInstance(Instance instance) throws Exception {
-	  double[] probs = new double[m_NumClasses];
-		int index = 0;
-		// Calculates P(Ci|X)~P(Ci)*P(X|Ci)
-		// ,P(Ci)=(Count(Ci)+1)/(m_NumInstance+m_NumClass)
-		for (index = 0; index < m_NumClasses; index++) {
-			double ClassPro = (double)(classins[index] )
-					/ (m_NumInstances + m_NumClasses);
-			int attIndex;
-			// Calculates P(X|C)
-			double result = 1;
-			for (attIndex = 0; attIndex < m_NumAttributes; attIndex++) {
-				if (attIndex != m_ClassIndex) {
-					// Calculates P(Ak|C)
-					if (m_Parents[attIndex] == -1) {
-						double part1 =(double) (m_CondiCounts[index][(int) instance
-								.value(attIndex)
-								+ m_StartAttIndex[attIndex]][(int) instance
-										.value(attIndex)
-										+ m_StartAttIndex[attIndex]]);
-						double part2 =(double) classins[index]+m_NumAttValues[attIndex];
-						
-						double part = part1/part2;
-						
-						result *= part;
-					}
-					// Calculates
-					// P(Ai|Aj,Ci)=(Count(Ai,Aj,Ci)+1)/(Count(Aj,C)+Count(Ai))  
-					else {
-						int parentIndex = m_Parents[attIndex];
-						double part1 =(double) m_CondiCounts[index][(int) instance
-								.value(attIndex)
-								+ m_StartAttIndex[attIndex]][(int) instance
-										.value(parentIndex)
-										+ m_StartAttIndex[parentIndex]]
-								+ 1;
-						double part2 =(double) m_CondiCounts[index][(int) instance
-								.value(parentIndex)
-								+ m_StartAttIndex[parentIndex]][(int) instance
-										.value(parentIndex)
-										+ m_StartAttIndex[parentIndex]]
-								+ m_NumAttValues[attIndex];
-						
-						double part = part1 / part2;
-						
-						result *= part;
-					}
-				}
-			}
-			result *= ClassPro;
-			probs[index] = result;
-		}
-		return probs;
+  /**
+	 * Calculates the class membership probabilities for the given test
+	 * instance.
+	 *
+	 * @param instance
+	 *          the instance to be classified
+	 * @return predicted class probability distribution
+	 * @exception Exception
+	 *              if there is a problem generating the prediction
+	 */
+	public double[] distributionForInstance(Instance instance) 
+			throws Exception {
 
-  }
+		// For debugging
+		if (m_Debug) {
+			System.out.println(
+					"========== Starting distributionForInstance () ==========");
+		}
+
+		// Probabilities to be calculated for each class value
+		double[] tempProbs = new double[m_NumClasses];
+
+		// Store this instance's attribute values into an integer array,
+		int[] index = new int[m_NumAttributes];
+		for (int i = 0; i < m_NumAttributes; i++) {
+			if (instance.isMissing(i) || i == m_ClassIndex)
+				index[i] = -1;
+			else
+				index[i] = m_StartAttIndex[i] + (int) instance.value(i);
+			System.out.println("index[i] = " + index[i]);
+		} // end of for
+
+		// Calculate prior probabilities for all possible class values
+		for (int c = 0; c < m_NumClasses; c++) {
+
+			// The prior probability using LaPlace estimation
+			tempProbs[c] =
+						(m_Priors[c] + 1) / 
+						(double) (m_NumInstances + m_NumClasses);
+			
+			// Consider effect of each attribute's value
+			for (int att = 0; att < m_NumAttributes; att++) {
+
+				if (index[att] == -1)	continue;
+
+				// Determine correct index for the att value in m_CondiCounts
+				int aIndex = index[att];
+
+				// Using Laplace estimation
+				// The attribute has a parent.
+				if ((m_Parents[att] != -1)
+								&& (!instance.isMissing(m_Parents[att]))) {
+				  // Determine index for parent value in m_CondiCounts
+					int pIndex = index[m_Parents[att]];
+
+					// Compute P(c)*P(a|p,c),this step:(*P(a|p,c))
+					tempProbs[c] *= ((double) m_CondiCounts[c][pIndex][aIndex] + 1)
+							/ (m_CondiCounts[c][pIndex][pIndex] + m_NumAttValues[att]);
+				} else {
+				  // The attribute doesn't have a parent
+					// Compute P(c)*P(a|c),this step:(*P(a|c))
+					tempProbs[c] *= ((double) m_CondiCounts[c][aIndex][aIndex] + 1)
+											/ (m_Priors[c] + m_NumAttValues[att]);
+				}
+			} // end of for
+		} // end of class for
+		
+		// For debugging
+		if (m_Debug) {
+			System.out.println(
+					"========== End of distributionForInstance ()   ==========\n");
+		}
+
+		return tempProbs;
+	} // End of distributionForInstance()
  
   //output the one dimen array
   private void onedimenout(int length, int[] data) {
@@ -648,15 +646,4 @@ public class TAN2AA extends AbstractClassifier implements OptionHandler,
     }
 
   }
-
-  public TechnicalInformation getTechnicalInformation() {
-	// TODO Auto-generated method stub
-	return null;
-  }
-
-  public void updateClassifier(Instance instance) throws Exception {
-	// TODO Auto-generated method stub
-	
-  }
-
 }

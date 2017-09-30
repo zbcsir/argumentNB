@@ -49,9 +49,6 @@ public class SuperParent extends AbstractClassifier {
 	/** The number of training instances in the Leave-One-Out 
 	 * Cross-validation*/
 	private int m_NumInstancesLOO ;
-	
-	/** The number of training instances with valid class value */
-//	private double m_NewNumInstances = 0;
 
 	/** The number of attributes, including the class */
 	private int m_NumAttributes;
@@ -292,7 +289,8 @@ public class SuperParent extends AbstractClassifier {
 			}
 		}
 		if(m_Debug)
-			System.out.println("==========Get SP End============SP is : "+superParent);
+			System.out.println("==========Get SP End============SP "
+					+ "is : "+superParent);
 		return superParent ;
 	}
 	
